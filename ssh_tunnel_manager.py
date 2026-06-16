@@ -102,23 +102,39 @@ class ConfigManager:
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def add_session(self, session: SSHSession):
+    def _collect_local_ports(self, session: SSHSession) -> set[int]:
+        """Collect all local_port values from a session's forward rules."""
+        ports = set()
+        for rule in getattr(session, "forward_rules", []):
+            lp = getattr(rule, "local_port", 0)
+            if lp:
+                ports.add(lp)
+        return ports
+
+    def add_session(self, session: SSHSession) -> tuple[bool, Optional[str]]:
+        """Add or update a session.
+
+        Returns (success, error_message).
+        On duplicate local_port, returns (False, "local_port X is used by session Y").
+        """
+        # Check local_port conflicts with existing sessions
+        new_ports = self._collect_local_ports(session)
+        for existing in self.sessions.values():
+            if existing.name == session.name:
+                continue
+            existing_ports = self._collect_local_ports(existing)
+            overlap = new_ports & existing_ports
+            if overlap:
+                port = sorted(overlap)[0]
+                return (False, f"Local port {port} is already used by session '{existing.name}'. Please modify it.")
+
         if session.name in self.sessions:
             self.sessions[session.name] = session
-            session.updated_at = datetime.now().isoformat()
-            self.save()
-            return
-        for existing_name in list(self.sessions.keys()):
-            if existing_name != session.name:
-                existing = self.sessions[existing_name]
-                if (existing.host == session.host and
-                    existing.username == session.username and
-                    existing.port == session.port):
-                    self.sessions.pop(existing_name, None)
-                    break
-        self.sessions[session.name] = session
+        else:
+            self.sessions[session.name] = session
         session.updated_at = datetime.now().isoformat()
         self.save()
+        return (True, None)
 
     def remove_session(self, name: str):
         self.sessions.pop(name, None)
@@ -621,7 +637,10 @@ class SSHTunnelManagerApp:
             if not dialog.result.name.strip():
                 messagebox.showwarning("Validation Error", "Session name cannot be empty.")
                 return
-            self.config.add_session(dialog.result)
+            ok, err = self.config.add_session(dialog.result)
+            if not ok:
+                messagebox.showwarning("Port Conflict", err)
+                return
             self._refresh_tree()
             self.log.append("Created session: " + dialog.result.name)
 
@@ -641,7 +660,10 @@ class SSHTunnelManagerApp:
             if not dialog.result.name.strip():
                 messagebox.showwarning("Validation Error", "Session name cannot be empty.")
                 return
-            self.config.add_session(dialog.result)
+            ok, err = self.config.add_session(dialog.result)
+            if not ok:
+                messagebox.showwarning("Port Conflict", err)
+                return
             self._refresh_tree()
             self.log.append("Edited session: " + dialog.result.name)
 
@@ -657,9 +679,18 @@ class SSHTunnelManagerApp:
         import copy
         new_session = copy.deepcopy(orig)
         new_session.name = orig.name + " (Copy)"
-        self.config.add_session(new_session)
-        self._refresh_tree()
-        self.log.append("Duplicated session: " + new_session.name)
+        dialog = SessionDialog(self.root, new_session)
+        dialog.wait_window()
+        if dialog.result:
+            if not dialog.result.name.strip():
+                messagebox.showwarning("Validation Error", "Session name cannot be empty.")
+                return
+            ok, err = self.config.add_session(dialog.result)
+            if not ok:
+                messagebox.showwarning("Port Conflict", err)
+                return
+            self._refresh_tree()
+            self.log.append("Duplicated session: " + dialog.result.name)
 
     def _delete_session(self):
         sel = self.tree.selection()

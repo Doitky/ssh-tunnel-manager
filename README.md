@@ -25,19 +25,19 @@ Built with Python + Tkinter. No external dependencies required beyond the Python
 
 ### Run from source
 
-`
+```shell
 git clone https://github.com/Doitky/ssh-tunnel-manager.git
 cd ssh-tunnel-manager
 python ssh_tunnel_manager.py
-`
+```
 
 ### Build standalone EXE
 
-`
+```shell
 pip install pyinstaller
 pyinstaller --onefile --windowed ssh_tunnel_manager.py
 # Output: dist/SSH-Tunnel-Manager.exe
-`
+```
 
 ## Usage
 
@@ -51,9 +51,9 @@ pyinstaller --onefile --windowed ssh_tunnel_manager.py
 
 Sessions are stored in:
 
-`
+```
 %USERPROFILE%\.ssh_tunnel_manager\sessions.json
-`
+```
 
 ## License
 

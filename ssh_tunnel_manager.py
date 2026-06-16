@@ -195,13 +195,10 @@ class SSHProcessManager:
                 connect_event.set()
                 if session.keepalive_enabled:
                     self._start_keepalive(session_name)
-                if session.auth_method == "password" and session.password and not shutil.which("sshpass"):
-                    time.sleep(2)
-                    try:
-                        proc.stdin.write(session.password + "\n")
-                        proc.stdin.flush()
-                    except Exception:
-                        pass
+                if session.auth_method == "password" and not shutil.which("sshpass"):
+                    log_lines.append("Warning: sshpass not found. Password authentication will fail.")
+                    log_lines.append("Install sshpass: brew install sshpass (macOS) or apt-get install sshpass (Linux)")
+                    log_lines.append("Or switch to key-based authentication in session settings.")
                 def _reader():
                     for line in proc.stdout:
                         log_lines.append(line.rstrip())
@@ -247,6 +244,7 @@ class SSHProcessManager:
                 cmd.extend(["sshpass", "-p", session.password, "ssh"])
         if not cmd:
             cmd = ["ssh"]
+            cmd.extend(["-o", "BatchMode=yes"])
         if session.port != 22:
             cmd.extend(["-p", str(session.port)])
         if session.auth_method == "key" and session.key_path:

@@ -563,6 +563,7 @@ class SSHTunnelManagerApp:
         self._start_polling()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+    def _build_ui(self):
         style = ttk.Style()
         # Load toolbar icons
         icon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
@@ -573,6 +574,8 @@ class SSHTunnelManagerApp:
             if os.path.exists(path):
                 self._icons[name] = tk.PhotoImage(file=path)
 
+        toolbar = ttk.Frame(self.root, padding=5)
+        toolbar.pack(fill=tk.X)
         tk.Button(toolbar, image=self._icons.get("new_session"), command=self._new_session,
                    bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
         tk.Button(toolbar, image=self._icons.get("edit"), command=self._edit_session,

@@ -198,7 +198,7 @@ class SSHProcessManager:
                 popen_kwargs = {
                     "stdin": subprocess.PIPE,
                     "stdout": subprocess.PIPE,
-                    "stderr": subprocess.STDOUT,
+                    "stderr": subprocess.DEVNULL,
                     "text": True,
                     "env": env,
                 }

@@ -4,7 +4,7 @@ Built with Python + Tkinter. No external dependencies required beyond the Python
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%2C%20macOS%2C%20Linux-lightgrey.svg)
 
 ## Features
 
@@ -18,8 +18,9 @@ Built with Python + Tkinter. No external dependencies required beyond the Python
 ## Requirements
 
 - Python 3.11+
-- Windows (tested on Windows 10/11)
-- Optional: sshpass for password-based non-interactive SSH authentication
+- Windows 10/11, macOS 12+, or Linux
+- `ssh` client available in PATH
+- Optional: `sshpass` for password-based authentication on non-Windows platforms
 
 ## Installation
 
@@ -31,12 +32,45 @@ cd ssh-tunnel-manager
 python ssh_tunnel_manager.py
 ```
 
-### Build standalone EXE
+### Build standalone executable
+
+#### Windows
 
 ```shell
 pip install pyinstaller
 pyinstaller --onefile --windowed ssh_tunnel_manager.py
-# Output: dist/SSH-Tunnel-Manager.exe
+# Output: dist/ssh-tunnel-manager.exe
+```
+
+#### macOS
+
+```shell
+pip install pyinstaller
+pyinstaller --onefile --windowed --name SSH-Tunnel-Manager ssh_tunnel_manager.py
+# Output: dist/SSH-Tunnel-Manager
+```
+
+#### Linux
+
+```shell
+pip install pyinstaller
+pyinstaller --onefile --windowed --name ssh-tunnel-manager ssh_tunnel_manager.py
+# Output: dist/ssh-tunnel-manager
+```
+
+### Install sshpass (non-Windows platforms)
+
+For password-based authentication on macOS/Linux, install `sshpass`:
+
+```shell
+# macOS
+brew install sshpass
+
+# Ubuntu / Debian
+sudo apt-get install sshpass
+
+# Fedora / RHEL
+sudo dnf install sshpass
 ```
 
 ## Usage
@@ -52,7 +86,8 @@ pyinstaller --onefile --windowed ssh_tunnel_manager.py
 Sessions are stored in:
 
 ```
-%USERPROFILE%\.ssh_tunnel_manager\sessions.json
+%USERPROFILE%\.ssh_tunnel_manager\sessions.json        (Windows)
+~/.ssh_tunnel_manager/sessions.json                      (macOS / Linux)
 ```
 
 ## License
@@ -62,4 +97,3 @@ MIT License. See [LICENSE](LICENSE) for details.
 ## Author
 
 **Doitky**
-=======

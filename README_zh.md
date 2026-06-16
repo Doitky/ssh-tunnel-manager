@@ -87,13 +87,9 @@ sudo dnf install sshpass
 
 ```
 %USERPROFILE%\.ssh_tunnel_manager\sessions.json        (Windows)
-~/.ssh_tunnel_manager/sessions.json                      (macOS / Linux)
+~/.ssh_tunnel_manager/sessions.json                    (macOS / Linux)
 ```
 
 ### 许可证
 
 MIT License。详见 [LICENSE](LICENSE)。
-
-### 作者
-
-**Doitky**

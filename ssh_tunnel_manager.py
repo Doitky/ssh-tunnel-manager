@@ -563,21 +563,38 @@ class SSHTunnelManagerApp:
         self._start_polling()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
-    def _build_ui(self):
-        toolbar = ttk.Frame(self.root, padding=5)
-        toolbar.pack(fill=tk.X)
-        ttk.Button(toolbar, text="+ New Session", command=self._new_session, width=12).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Edit", command=self._edit_session, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Duplicate", command=self._duplicate_session, width=10).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Delete", command=self._delete_session, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Connect", command=self._connect_session, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Disconnect", command=self._disconnect_session, width=10).pack(side=tk.LEFT, padx=1)
+        style = ttk.Style()
+        # Load toolbar icons
+        icon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
+        self._icons = {}
+        for name in ["new_session", "edit", "duplicate", "delete", "connect", "disconnect",
+                      "connect_all", "disconnect_all", "refresh", "settings"]:
+            path = os.path.join(icon_dir, name + ".png")
+            if os.path.exists(path):
+                self._icons[name] = tk.PhotoImage(file=path)
+
+        tk.Button(toolbar, image=self._icons.get("new_session"), command=self._new_session,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("edit"), command=self._edit_session,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("duplicate"), command=self._duplicate_session,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("delete"), command=self._delete_session,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("connect"), command=self._connect_session,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("disconnect"), command=self._disconnect_session,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=4)
-        ttk.Button(toolbar, text="Connect All", command=self._connect_all, width=10).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Disconnect All", command=self._disconnect_all, width=12).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Refresh", command=self._refresh_tree, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Settings", command=self._show_settings, width=8).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("connect_all"), command=self._connect_all,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("disconnect_all"), command=self._disconnect_all,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("refresh"), command=self._refresh_tree,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
+        tk.Button(toolbar, image=self._icons.get("settings"), command=self._show_settings,
+                   bg=style.lookup("TButton", "background"), relief="flat", borderwidth=1).pack(side=tk.LEFT, padx=1)
         main_paned = ttk.PanedWindow(self.root, orient=tk.VERTICAL)
         main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         main_frame = ttk.Frame(main_paned)

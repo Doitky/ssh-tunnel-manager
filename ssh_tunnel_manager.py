@@ -259,9 +259,13 @@ class SSHProcessManager:
     def _build_ssh_command(self, session: SSHSession) -> Optional[list[str]]:
         cmd = []
         if session.auth_method == "password" and session.password:
-            sshpass_avail = shutil.which("sshpass")
-            if sshpass_avail:
-                cmd.extend(["sshpass", "-p", session.password, "ssh"])
+            sshpass_bin = shutil.which("sshpass") or (
+                os.path.exists("/opt/homebrew/bin/sshpass") and "/opt/homebrew/bin/sshpass"
+            ) or (
+                os.path.exists("/usr/local/bin/sshpass") and "/usr/local/bin/sshpass"
+            )
+            if sshpass_bin:
+                cmd.extend([sshpass_bin, "-p", session.password, "ssh"])
         if not cmd:
             cmd = ["ssh"]
             cmd.extend(["-o", "BatchMode=yes"])

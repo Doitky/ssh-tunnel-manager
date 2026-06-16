@@ -1,4 +1,4 @@
-# SSH Tunnel Manager
+<<<<<<< HEAD
 
 A desktop GUI application for managing SSH sessions and port forwarding tunnels, inspired by MobaXterm.
 
@@ -64,3 +64,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 ## Author
 
 **Doitky**
+=======
+# ssh-tunnel-manager
+>>>>>>> f5e9da571f1b752a83dee2c1c8ec82641316379f
+>>>>>>> f5e9da571f1b752a83dee2c1c8ec82641316379f

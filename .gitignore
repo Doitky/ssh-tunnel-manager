@@ -20,3 +20,5 @@ build/
 
 # Config
 .ssh_tunnel_manager/
+
+AGENTS.md

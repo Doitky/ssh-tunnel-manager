@@ -233,7 +233,11 @@ class SSHProcessManager:
         except subprocess.TimeoutExpired:
             if proc is not None:
                 proc.kill()
-        del self.active_processes[session_name]
+                proc.wait(timeout=3)
+        except Exception:
+            pass
+        finally:
+            self.active_processes.pop(session_name, None)
         return True
 
     def _build_ssh_command(self, session: SSHSession) -> Optional[list[str]]:
@@ -702,10 +706,10 @@ class SSHTunnelManagerApp:
         if name in self.ssh_manager.active_processes:
             self.ssh_manager.stop_session(name)
             self.log.append("Disconnected: " + name)
-            self._refresh_tree()
-            self._update_status_bar()
         else:
-            messagebox.showinfo("Info", "Session " + repr(name) + " is not active.")
+            self.log.append("Session " + repr(name) + " is not active.")
+        self._refresh_tree()
+        self._update_status_bar()
 
     def _connect_all(self):
         sessions = self.config.list_sessions()
@@ -729,7 +733,11 @@ class SSHTunnelManagerApp:
             messagebox.showinfo("Info", "No active sessions to disconnect.")
             return
         for name in active:
-            self.ssh_manager.stop_session(name)
+            try:
+                self.ssh_manager.stop_session(name)
+            except Exception as e:
+                self.log.append("[Error] Failed to disconnect %s: %s" % (name, e))
+                continue
             ts = datetime.now().strftime("%H:%M:%S")
             self.log.append("[%s] Disconnected: %s" % (ts, name))
         self._refresh_tree()

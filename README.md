@@ -1,5 +1,6 @@
 A desktop GUI application for managing SSH sessions and port forwarding tunnels, inspired by MobaXterm.
 
+**Language:** [English](README.md) | [中文](README_zh.md)
 Built with Python + Tkinter. No external dependencies required beyond the Python standard library.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
@@ -97,7 +98,3 @@ MIT License. See [LICENSE](LICENSE) for details.
 ## Author
 
 **Doitky**
-
----
-
-**[中文版 README →](README_zh.md)**

@@ -1,5 +1,6 @@
 ## 中文说明
 
+**Language:** [English](README.md) | [中文](README_zh.md)
 一个基于 Python + Tkinter 的桌面 GUI 应用，用于管理 SSH 会话和端口转发隧道，灵感来源于 MobaXterm。
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
@@ -97,7 +98,3 @@ MIT License。详见 [LICENSE](LICENSE)。
 ### 作者
 
 **Doitky**
-
----
-
-**[English README →](README.md)**

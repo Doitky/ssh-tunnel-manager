@@ -94,7 +94,3 @@ Sessions are stored in:
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
-
-## Author
-
-**Doitky**

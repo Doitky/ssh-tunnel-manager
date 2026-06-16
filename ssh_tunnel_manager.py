@@ -603,8 +603,9 @@ class SSHTunnelManagerApp:
         self.status_var = tk.StringVar(value="Ready")
         status_bar = ttk.Frame(self.root, padding=3)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        self.clock_var = tk.StringVar(value="")
         ttk.Label(status_bar, textvariable=self.status_var, foreground="gray").pack(side=tk.LEFT)
-        ttk.Label(status_bar, text="", foreground="blue").pack(side=tk.RIGHT)
+        ttk.Label(status_bar, textvariable=self.clock_var, foreground="blue").pack(side=tk.RIGHT)
 
     def _refresh_tree(self):
         for item in self.tree.get_children():
@@ -815,12 +816,18 @@ class SSHTunnelManagerApp:
         ttk.Label(frame, text="Author: Doitky", foreground="blue").pack(anchor=tk.W, pady=(0, 15))
         ttk.Button(frame, text="Close", command=win.destroy).pack(pady=10)
 
+    def _update_clock(self):
+        """Update the clock display every second."""
+        self.clock_var.set(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        self.root.after(1000, self._update_clock)
+
     def _start_polling(self):
         """Start the background polling thread and register the UI callback."""
         def _on_poll_status(name: str, status: str, detail: str):
             self.root.after(0, self._handle_poll_status, name, status, detail)
         self.ssh_manager.start_polling(callback=_on_poll_status, interval=2.0)
         self.log.append("[Polling] Connection health monitor started (interval: 2s)")
+        self._update_clock()
 
     def _handle_poll_status(self, name: str, status: str, detail: str):
         """Handle polling results on the UI thread and refresh the tree."""

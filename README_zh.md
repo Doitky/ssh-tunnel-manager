@@ -44,7 +44,13 @@ pyinstaller --onefile --windowed ssh_tunnel_manager.py
 
 **macOS**
 
+> **注意：** 请使用 Homebrew 安装的 Python 3.12+，系统自带的 Python 3.9 的 Tkinter 在 macOS 15 上会导致崩溃。
+
 ```shell
+# 确保使用 Homebrew Python
+export PATH="/usr/local/opt/python@3.12/bin:$PATH"  # Intel Mac
+# export PATH="/opt/homebrew/opt/python@3.12/bin:$PATH"  # Apple Silicon Mac
+
 pip install pyinstaller
 pyinstaller --onefile --windowed --name SSH-Tunnel-Manager ssh_tunnel_manager.py
 # 输出: dist/SSH-Tunnel-Manager

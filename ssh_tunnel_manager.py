@@ -139,6 +139,9 @@ class SSHProcessManager:
         self.config = config
         self.active_processes: dict[str, dict] = {}
         self._keepalive_timers: dict[str, threading.Timer] = {}
+        self._polling_thread: Optional[threading.Thread] = None
+        self._polling_stop_event = threading.Event()
+        self._poll_callback = None  # callable(name, status, detail)
 
     def start_session(self, session_name: str, callback=None):
         session = self.config.get_session(session_name)
@@ -176,17 +179,19 @@ class SSHProcessManager:
                 log_lines.append(f"[{datetime.now().strftime('%H:%M:%S')}] Starting session: {session_name}")
                 log_lines.append(f"Command: {' '.join(cmd)}")
                 env = os.environ.copy()
-                proc = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    env=env,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                )
+                popen_kwargs = {
+                    "stdin": subprocess.PIPE,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.STDOUT,
+                    "text": True,
+                    "env": env,
+                }
+                if sys.platform == "win32":
+                    popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                proc = subprocess.Popen(cmd, **popen_kwargs)
                 self.active_processes[session_name]["proc"] = proc
                 self.active_processes[session_name]["thread"] = threading.current_thread()
+                self.active_processes[session_name]["_last_poll_status"] = "starting"
                 connect_event.set()
                 if session.keepalive_enabled:
                     self._start_keepalive(session_name)
@@ -204,7 +209,6 @@ class SSHProcessManager:
                 reader_thread = threading.Thread(target=_reader, daemon=True)
                 reader_thread.start()
                 proc.wait()
-                log_lines.append(f"[{datetime.now().strftime('%H:%M:%S')}] Process exited with code {proc.returncode}")
             except Exception as e:
                 log_lines.append(f"Error: {e}")
             finally:
@@ -286,6 +290,51 @@ class SSHProcessManager:
 
     def _stop_keepalive(self, session_name: str):
         self._keepalive_timers.pop(session_name, None)
+
+    # ─── Connection Status Polling ───────────────────────────────────────────
+
+    def start_polling(self, callback=None, interval: float = 2.0):
+        """Start a background thread that periodically checks SSH process health.
+
+        The callback signature: callback(session_name: str, status: str, detail: str)
+          - status: "active" | "exited" | "error"
+        """
+        self._poll_callback = callback
+        self._poll_interval = interval
+        self._polling_stop_event.clear()
+
+        def _poll_loop():
+            while not self._polling_stop_event.is_set():
+                for name, info in list(self.active_processes.items()):
+                    proc = info.get("proc")
+                    if proc is None:
+                        continue
+                    rc = proc.poll()
+                    if rc is not None:
+                        # Process has exited
+                        detail = f"Exited with code {rc}"
+                        if self._poll_callback:
+                            self._poll_callback(name, "exited", detail)
+                        self._stop_keepalive(name)
+                        self.active_processes.pop(name, None)
+                    elif rc is None and info.get("_last_poll_status") != "active":
+                        # Just became active (first successful poll)
+                        if self._poll_callback:
+                            self._poll_callback(name, "active", "Running")
+                        info["_last_poll_status"] = "active"
+                self._polling_stop_event.wait(self._poll_interval)
+
+        t = threading.Thread(target=_poll_loop, daemon=True, name="SSH-Poller")
+        t.start()
+        self._polling_thread = t
+
+    def stop_polling(self):
+        """Stop the background polling thread."""
+        self._polling_stop_event.set()
+        if self._polling_thread and self._polling_thread.is_alive():
+            self._polling_thread.join(timeout=5)
+        self._polling_thread = None
+        self._poll_callback = None
 
 
 class SessionDialog(tk.Toplevel):
@@ -493,6 +542,7 @@ class SSHTunnelManagerApp:
         self.ssh_manager = SSHProcessManager(self.config)
         self._build_ui()
         self._refresh_tree()
+        self._start_polling()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _build_ui(self):
@@ -510,13 +560,13 @@ class SSHTunnelManagerApp:
         ttk.Button(toolbar, text="Disconnect All", command=self._disconnect_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Refresh", command=self._refresh_tree).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Settings", command=self._show_settings).pack(side=tk.RIGHT, padx=2)
-        main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main_paned = ttk.PanedWindow(self.root, orient=tk.VERTICAL)
         main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        left_frame = ttk.Frame(main_paned)
-        main_paned.add(left_frame, weight=2)
-        ttk.Label(left_frame, text="Sessions", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=5, pady=5)
+        main_frame = ttk.Frame(main_paned)
+        main_paned.add(main_frame, weight=3)
+        ttk.Label(main_frame, text="Sessions", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=5, pady=5)
         columns = ("name", "host", "port", "username", "status", "forwarding_direction", "forwarding_local_port")
-        self.tree = ttk.Treeview(left_frame, columns=columns, show="headings", height=20)
+        self.tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=20)
         for col in columns:
             hm = {"name": "Name", "host": "Host", "port": "Port", "username": "Username", "status": "Status", "forwarding_direction": "Direction", "forwarding_local_port": "Local Port"}
             self.tree.heading(col, text=hm[col])
@@ -527,10 +577,10 @@ class SSHTunnelManagerApp:
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.tree.bind("<Double-1>", lambda e: self._connect_session())
         self.tree.bind("<Button-3>", self._show_context_menu)
-        right_frame = ttk.Frame(main_paned)
-        main_paned.add(right_frame, weight=3)
-        ttk.Label(right_frame, text="Connection Log", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=5, pady=5)
-        self.log = LogWindow(right_frame)
+        log_frame = ttk.Frame(main_paned)
+        main_paned.add(log_frame, weight=2)
+        ttk.Label(log_frame, text="Connection Log", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=5, pady=5)
+        self.log = LogWindow(log_frame)
         self.log.pack(fill=tk.BOTH, expand=True)
         self.status_var = tk.StringVar(value="Ready")
         status_bar = ttk.Frame(self.root, padding=3)
@@ -634,6 +684,18 @@ class SSHTunnelManagerApp:
         self.ssh_manager.start_session(name, self.log.append)
         self._refresh_tree()
 
+    def _update_status_bar(self):
+        """Recalculate and update the status bar display."""
+        total = len(self.config.list_sessions())
+        active_count = len(self.ssh_manager.active_processes)
+        exited_count = total - active_count
+        parts = [f"Total: {total}"]
+        if active_count:
+            parts.append(f"Active: {active_count}")
+        if exited_count > 0:
+            parts.append(f"Exited: {exited_count}")
+        self.status_var.set(" | ".join(parts))
+
     def _disconnect_session(self):
         sel = self.tree.selection()
         if not sel:
@@ -643,6 +705,7 @@ class SSHTunnelManagerApp:
             self.ssh_manager.stop_session(name)
             self.log.append("Disconnected: " + name)
             self._refresh_tree()
+            self._update_status_bar()
         else:
             messagebox.showinfo("Info", "Session " + repr(name) + " is not active.")
 
@@ -672,6 +735,7 @@ class SSHTunnelManagerApp:
             ts = datetime.now().strftime("%H:%M:%S")
             self.log.append("[%s] Disconnected: %s" % (ts, name))
         self._refresh_tree()
+        self._update_status_bar()
 
     def _show_context_menu(self, event):
         sel = self.tree.selection()
@@ -714,7 +778,30 @@ class SSHTunnelManagerApp:
         ttk.Label(frame, text="Author: Doitky", foreground="blue").pack(anchor=tk.W, pady=(0, 15))
         ttk.Button(frame, text="Close", command=win.destroy).pack(pady=10)
 
+    def _start_polling(self):
+        """Start the background polling thread and register the UI callback."""
+        def _on_poll_status(name: str, status: str, detail: str):
+            self.root.after(0, self._handle_poll_status, name, status, detail)
+        self.ssh_manager.start_polling(callback=_on_poll_status, interval=2.0)
+        self.log.append("[Polling] Connection health monitor started (interval: 2s)")
+
+    def _handle_poll_status(self, name: str, status: str, detail: str):
+        """Handle polling results on the UI thread and refresh the tree."""
+        total = len(self.config.list_sessions())
+        active_count = len(self.ssh_manager.active_processes)
+        exited_count = total - active_count
+        parts = [f"Total: {total}"]
+        if active_count:
+            parts.append(f"Active: {active_count}")
+        if exited_count > 0:
+            parts.append(f"Exited: {exited_count}")
+        self.status_var.set(" | ".join(parts))
+        if status == "exited":
+            self.log.append(f"[Polling] Session '{name}' disconnected: {detail}")
+        self._refresh_tree()
+
     def _on_closing(self):
+        self.ssh_manager.stop_polling()
         for name in list(self.ssh_manager.active_processes.keys()):
             self.ssh_manager.stop_session(name)
         self.root.destroy()

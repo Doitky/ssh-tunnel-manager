@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-
 A desktop GUI application for managing SSH sessions and port forwarding tunnels, inspired by MobaXterm.
 
 Built with Python + Tkinter. No external dependencies required beyond the Python standard library.
@@ -27,7 +25,7 @@ Built with Python + Tkinter. No external dependencies required beyond the Python
 
 ### Run from source
 
-`ash
+`bash
 git clone https://github.com/Doitky/ssh-tunnel-manager.git
 cd ssh-tunnel-manager
 python ssh_tunnel_manager.py
@@ -35,7 +33,7 @@ python ssh_tunnel_manager.py
 
 ### Build standalone EXE
 
-`ash
+`bash
 pip install pyinstaller
 pyinstaller --onefile --windowed ssh_tunnel_manager.py
 # Output: dist/SSH-Tunnel-Manager.exe
@@ -65,6 +63,3 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 **Doitky**
 =======
-# ssh-tunnel-manager
->>>>>>> f5e9da571f1b752a83dee2c1c8ec82641316379f
->>>>>>> f5e9da571f1b752a83dee2c1c8ec82641316379f

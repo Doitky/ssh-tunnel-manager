@@ -102,39 +102,23 @@ class ConfigManager:
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def _collect_local_ports(self, session: SSHSession) -> set[int]:
-        """Collect all local_port values from a session's forward rules."""
-        ports = set()
-        for rule in getattr(session, "forward_rules", []):
-            lp = getattr(rule, "local_port", 0)
-            if lp:
-                ports.add(lp)
-        return ports
-
-    def add_session(self, session: SSHSession) -> tuple[bool, Optional[str]]:
-        """Add or update a session.
-
-        Returns (success, error_message).
-        On duplicate local_port, returns (False, "local_port X is used by session Y").
-        """
-        # Check local_port conflicts with existing sessions
-        new_ports = self._collect_local_ports(session)
-        for existing in self.sessions.values():
-            if existing.name == session.name:
-                continue
-            existing_ports = self._collect_local_ports(existing)
-            overlap = new_ports & existing_ports
-            if overlap:
-                port = sorted(overlap)[0]
-                return (False, f"Local port {port} is already used by session '{existing.name}'. Please modify it.")
-
+    def add_session(self, session: SSHSession):
         if session.name in self.sessions:
             self.sessions[session.name] = session
-        else:
-            self.sessions[session.name] = session
+            session.updated_at = datetime.now().isoformat()
+            self.save()
+            return
+        for existing_name in list(self.sessions.keys()):
+            if existing_name != session.name:
+                existing = self.sessions[existing_name]
+                if (existing.host == session.host and
+                    existing.username == session.username and
+                    existing.port == session.port):
+                    self.sessions.pop(existing_name, None)
+                    break
+        self.sessions[session.name] = session
         session.updated_at = datetime.now().isoformat()
         self.save()
-        return (True, None)
 
     def remove_session(self, name: str):
         self.sessions.pop(name, None)
@@ -249,11 +233,7 @@ class SSHProcessManager:
         except subprocess.TimeoutExpired:
             if proc is not None:
                 proc.kill()
-                proc.wait(timeout=3)
-        except Exception:
-            pass
-        finally:
-            self.active_processes.pop(session_name, None)
+        del self.active_processes[session_name]
         return True
 
     def _build_ssh_command(self, session: SSHSession) -> Optional[list[str]]:
@@ -566,18 +546,18 @@ class SSHTunnelManagerApp:
     def _build_ui(self):
         toolbar = ttk.Frame(self.root, padding=5)
         toolbar.pack(fill=tk.X)
-        ttk.Button(toolbar, text="+ New Session", command=self._new_session, width=12).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Edit", command=self._edit_session, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Duplicate", command=self._duplicate_session, width=10).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Delete", command=self._delete_session, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Connect", command=self._connect_session, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Disconnect", command=self._disconnect_session, width=10).pack(side=tk.LEFT, padx=1)
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=4)
-        ttk.Button(toolbar, text="Connect All", command=self._connect_all, width=10).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Disconnect All", command=self._disconnect_all, width=12).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Refresh", command=self._refresh_tree, width=8).pack(side=tk.LEFT, padx=1)
-        ttk.Button(toolbar, text="Settings", command=self._show_settings, width=8).pack(side=tk.LEFT, padx=1)
+        ttk.Button(toolbar, text="+ New Session", command=self._new_session).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Edit", command=self._edit_session).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Duplicate", command=self._duplicate_session).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Delete", command=self._delete_session).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Connect", command=self._connect_session).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Disconnect", command=self._disconnect_session).pack(side=tk.LEFT, padx=2)
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+        ttk.Button(toolbar, text="Connect All", command=self._connect_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Disconnect All", command=self._disconnect_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_tree).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Settings", command=self._show_settings).pack(side=tk.RIGHT, padx=2)
         main_paned = ttk.PanedWindow(self.root, orient=tk.VERTICAL)
         main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         main_frame = ttk.Frame(main_paned)
@@ -637,10 +617,7 @@ class SSHTunnelManagerApp:
             if not dialog.result.name.strip():
                 messagebox.showwarning("Validation Error", "Session name cannot be empty.")
                 return
-            ok, err = self.config.add_session(dialog.result)
-            if not ok:
-                messagebox.showwarning("Port Conflict", err)
-                return
+            self.config.add_session(dialog.result)
             self._refresh_tree()
             self.log.append("Created session: " + dialog.result.name)
 
@@ -660,10 +637,7 @@ class SSHTunnelManagerApp:
             if not dialog.result.name.strip():
                 messagebox.showwarning("Validation Error", "Session name cannot be empty.")
                 return
-            ok, err = self.config.add_session(dialog.result)
-            if not ok:
-                messagebox.showwarning("Port Conflict", err)
-                return
+            self.config.add_session(dialog.result)
             self._refresh_tree()
             self.log.append("Edited session: " + dialog.result.name)
 
@@ -679,18 +653,9 @@ class SSHTunnelManagerApp:
         import copy
         new_session = copy.deepcopy(orig)
         new_session.name = orig.name + " (Copy)"
-        dialog = SessionDialog(self.root, new_session)
-        dialog.wait_window()
-        if dialog.result:
-            if not dialog.result.name.strip():
-                messagebox.showwarning("Validation Error", "Session name cannot be empty.")
-                return
-            ok, err = self.config.add_session(dialog.result)
-            if not ok:
-                messagebox.showwarning("Port Conflict", err)
-                return
-            self._refresh_tree()
-            self.log.append("Duplicated session: " + dialog.result.name)
+        self.config.add_session(new_session)
+        self._refresh_tree()
+        self.log.append("Duplicated session: " + new_session.name)
 
     def _delete_session(self):
         sel = self.tree.selection()
@@ -737,10 +702,10 @@ class SSHTunnelManagerApp:
         if name in self.ssh_manager.active_processes:
             self.ssh_manager.stop_session(name)
             self.log.append("Disconnected: " + name)
+            self._refresh_tree()
+            self._update_status_bar()
         else:
-            self.log.append("Session " + repr(name) + " is not active.")
-        self._refresh_tree()
-        self._update_status_bar()
+            messagebox.showinfo("Info", "Session " + repr(name) + " is not active.")
 
     def _connect_all(self):
         sessions = self.config.list_sessions()
@@ -764,11 +729,7 @@ class SSHTunnelManagerApp:
             messagebox.showinfo("Info", "No active sessions to disconnect.")
             return
         for name in active:
-            try:
-                self.ssh_manager.stop_session(name)
-            except Exception as e:
-                self.log.append("[Error] Failed to disconnect %s: %s" % (name, e))
-                continue
+            self.ssh_manager.stop_session(name)
             ts = datetime.now().strftime("%H:%M:%S")
             self.log.append("[%s] Disconnected: %s" % (ts, name))
         self._refresh_tree()

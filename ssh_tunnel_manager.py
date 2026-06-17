@@ -211,7 +211,7 @@ class SSHProcessManager:
                 connect_event.set()
                 if session.keepalive_enabled:
                     self._start_keepalive(session_name)
-                if session.auth_method == "password" and not shutil.which("sshpass"):
+                if session.auth_method == "password" and not self._find_sshpass():
                     log_lines.append("Warning: sshpass not found. Password authentication will fail.")
                     log_lines.append("Install sshpass: brew install sshpass (macOS) or apt-get install sshpass (Linux)")
                     log_lines.append("Or switch to key-based authentication in session settings.")
@@ -256,14 +256,32 @@ class SSHProcessManager:
             self.active_processes.pop(session_name, None)
         return True
 
+    def _find_sshpass(self) -> Optional[str]:
+        """Find sshpass binary, checking bundled location first."""
+        # Check bundled sshpass in .app Resources directory
+        # When running as PyInstaller app:
+        #   - sys.executable -> Contents/MacOS/SSH Tunnel Manager
+        #   - __file__ -> Contents/Resources/ssh_tunnel_manager.py
+        # So sshpass should be at Contents/Resources/sshpass
+        resource_dir = os.path.dirname(os.path.abspath(__file__))
+        bundled = os.path.join(resource_dir, "sshpass")
+        if os.path.exists(bundled):
+            return bundled
+        # Fall back to system PATH
+        found = shutil.which("sshpass")
+        if found:
+            return found
+        # Homebrew paths
+        if os.path.exists("/opt/homebrew/bin/sshpass"):
+            return "/opt/homebrew/bin/sshpass"
+        if os.path.exists("/usr/local/bin/sshpass"):
+            return "/usr/local/bin/sshpass"
+        return None
+
     def _build_ssh_command(self, session: SSHSession) -> Optional[list[str]]:
         cmd = []
         if session.auth_method == "password" and session.password:
-            sshpass_bin = shutil.which("sshpass") or (
-                os.path.exists("/opt/homebrew/bin/sshpass") and "/opt/homebrew/bin/sshpass"
-            ) or (
-                os.path.exists("/usr/local/bin/sshpass") and "/usr/local/bin/sshpass"
-            )
+            sshpass_bin = self._find_sshpass()
             if sshpass_bin:
                 cmd.extend([sshpass_bin, "-p", session.password, "ssh"])
         if not cmd:

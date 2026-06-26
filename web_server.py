@@ -158,3 +158,21 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
     app.mount("/web", StaticFiles(directory=str(_web_dir)), name="web")
 
     return app
+
+
+def main():
+    parser = argparse.ArgumentParser(description="SSH Tunnel Manager Web Server")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8741)
+    parser.add_argument("--token", default=os.environ.get("SSH_TUNNEL_TOKEN", ""))
+    parser.add_argument("--config", default=None, help="sessions.json path")
+    args = parser.parse_args()
+    if not args.token:
+        raise SystemExit("Error: token required. Use --token or set SSH_TUNNEL_TOKEN.")
+    app = create_app(token=args.token, config_path=args.config)
+    import uvicorn
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()

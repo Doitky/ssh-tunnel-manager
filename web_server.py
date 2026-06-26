@@ -18,6 +18,21 @@ class AppState:
         self.config = ConfigManager(config_path=config_path)
         self.manager = SSHProcessManager(self.config)
         self.manager.start_polling()
+        self.logs: dict[str, list[str]] = {}
+        self.manager.subscribe(self._on_event)
+
+    def _on_event(self, event: dict):
+        name = event.get("name")
+        if not name:
+            return
+        self.logs.setdefault(name, [])
+        if event.get("type") == "log":
+            for line in str(event.get("lines", "")).splitlines():
+                self.logs[name].append(line)
+        elif event.get("type") == "status":
+            self.logs[name].append(f"[{event.get('status')}] {event.get('detail', '')}")
+        # 限制日志长度
+        self.logs[name] = self.logs[name][-500:]
 
 
 _state: Optional[AppState] = None
@@ -71,5 +86,38 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="not found")
         _state.config.remove_session(name)
         return {"ok": True}
+
+    @app.post("/api/sessions/{name}/connect")
+    def connect(name: str, _t: str = Depends(_require_token)):
+        if _state.config.get_session(name) is None:
+            raise HTTPException(status_code=404, detail="not found")
+        _state.manager.start_session(name)
+        return {"ok": True}
+
+    @app.post("/api/sessions/{name}/disconnect")
+    def disconnect(name: str, _t: str = Depends(_require_token)):
+        if _state.config.get_session(name) is None:
+            raise HTTPException(status_code=404, detail="not found")
+        _state.manager.stop_session(name)
+        return {"ok": True}
+
+    @app.post("/api/connect-all")
+    def connect_all(_t: str = Depends(_require_token)):
+        for s in _state.config.list_sessions():
+            if s.enabled:
+                _state.manager.start_session(s.name)
+        return {"ok": True}
+
+    @app.post("/api/disconnect-all")
+    def disconnect_all(_t: str = Depends(_require_token)):
+        for s in list(_state.manager.active_processes.keys()):
+            _state.manager.stop_session(s)
+        return {"ok": True}
+
+    @app.get("/api/sessions/{name}/logs")
+    def get_logs(name: str, _t: str = Depends(_require_token)):
+        if _state.config.get_session(name) is None:
+            raise HTTPException(status_code=404, detail="not found")
+        return {"lines": "\n".join(_state.logs.get(name, []))}
 
     return app

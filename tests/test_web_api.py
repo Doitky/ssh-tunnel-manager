@@ -57,3 +57,29 @@ def test_delete_session(client):
     assert r.status_code == 200
     r = client.get("/api/sessions", headers={"Authorization": "Bearer secret"})
     assert r.json() == []
+
+
+def test_connect_missing_session_404(client):
+    r = client.post("/api/sessions/nope/connect", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 404
+
+
+def test_disconnect_missing_session_404(client):
+    r = client.post("/api/sessions/nope/disconnect", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 404
+
+
+def test_disconnect_all_ok(client):
+    client.post("/api/sessions", headers={"Authorization": "Bearer secret"},
+                json={"name": "a", "host": "h", "username": "u", "forward_rules": []})
+    r = client.post("/api/disconnect-all", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_logs_endpoint(client):
+    client.post("/api/sessions", headers={"Authorization": "Bearer secret"},
+                json={"name": "a", "host": "h", "username": "u", "forward_rules": []})
+    r = client.get("/api/sessions/a/logs", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    assert "lines" in r.json()

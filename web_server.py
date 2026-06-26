@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.config import ConfigManager
+from core.models import SSHSession
 from core.ssh_manager import SSHProcessManager
 
 
@@ -52,5 +53,23 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
             d["status"] = "active" if _state.manager.is_active(s.name) else "idle"
             out.append(d)
         return out
+
+    @app.post("/api/sessions")
+    def save_session(body: dict, _t: str = Depends(_require_token)):
+        try:
+            session = SSHSession.from_dict(body)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"invalid session: {e}")
+        ok, err = _state.config.add_session(session)
+        if not ok:
+            raise HTTPException(status_code=400, detail=err)
+        return session.to_dict()
+
+    @app.delete("/api/sessions/{name}")
+    def delete_session(name: str, _t: str = Depends(_require_token)):
+        if _state.config.get_session(name) is None:
+            raise HTTPException(status_code=404, detail="not found")
+        _state.config.remove_session(name)
+        return {"ok": True}
 
     return app

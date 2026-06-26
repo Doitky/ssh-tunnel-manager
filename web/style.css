@@ -1,0 +1,23 @@
+
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, "PingFang SC", sans-serif;
+       background: #1e1e1e; color: #ddd; display: flex; height: 100vh; }
+#login { margin: auto; padding: 2rem; background: #2a2a2a; border-radius: 8px; }
+#login input { padding: .5rem; margin: .3rem 0; width: 100%; }
+#login button { padding: .5rem 1rem; width: 100%; cursor: pointer; }
+#app { display: none; width: 100%; }
+#sidebar { width: 280px; background: #252526; border-right: 1px solid #333; overflow-y: auto; }
+#sidebar h2 { padding: 1rem; margin: 0; font-size: 1rem; }
+.session-item { padding: .8rem 1rem; cursor: pointer; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+.session-item:hover { background: #2d2d2d; }
+.session-item.active { background: #094771; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #666; }
+.dot.active { background: #4ec9b0; }
+#detail { flex: 1; padding: 1rem; overflow-y: auto; }
+button.act { padding: .4rem .8rem; margin-right: .5rem; cursor: pointer; }
+table { width: 100%; border-collapse: collapse; margin: .5rem 0; }
+th, td { padding: .4rem; border: 1px solid #444; text-align: left; }
+#log { background: #000; color: #0f0; padding: .8rem; height: 240px; overflow-y: auto;
+       font-family: monospace; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; }
+.toolbar { margin-bottom: 1rem; }
+input, select { background: #333; color: #ddd; border: 1px solid #555; padding: .3rem; }

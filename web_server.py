@@ -148,4 +148,13 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
                                  headers={"Cache-Control": "no-cache",
                                           "X-Accel-Buffering": "no"})
 
+    import pathlib
+    _web_dir = pathlib.Path(__file__).parent / "web"
+
+    @app.get("/")
+    def index():
+        return FileResponse(str(_web_dir / "index.html"))
+
+    app.mount("/web", StaticFiles(directory=str(_web_dir)), name="web")
+
     return app

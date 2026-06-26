@@ -3,7 +3,7 @@ import os
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -119,5 +119,33 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
         if _state.config.get_session(name) is None:
             raise HTTPException(status_code=404, detail="not found")
         return {"lines": "\n".join(_state.logs.get(name, []))}
+
+    @app.get("/api/events")
+    def events(token: Optional[str] = None):
+        if token != _state.token:
+            raise HTTPException(status_code=401, detail="unauthorized")
+        import asyncio
+        import queue
+        q: "queue.Queue" = queue.Queue()
+        unsub = _state.manager.subscribe(lambda e: q.put(e))
+
+        async def _gen():
+            import json as _json
+            try:
+                while True:
+                    try:
+                        ev = q.get_nowait()
+                        yield f"event: {ev.get('type', 'message')}\n"
+                        yield f"data: {_json.dumps(ev, ensure_ascii=False)}\n\n"
+                    except queue.Empty:
+                        # 超时空行保活
+                        yield ": keep-alive\n\n"
+                        await asyncio.sleep(1.0)
+            finally:
+                unsub()
+
+        return StreamingResponse(_gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
 
     return app

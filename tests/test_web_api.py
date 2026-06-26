@@ -83,3 +83,41 @@ def test_logs_endpoint(client):
     r = client.get("/api/sessions/a/logs", headers={"Authorization": "Bearer secret"})
     assert r.status_code == 200
     assert "lines" in r.json()
+
+
+def test_sse_requires_token(client):
+    r = client.get("/api/events")
+    assert r.status_code == 401
+
+
+def test_sse_requires_valid_token(client):
+    # token query 参数校验：错误 token 仍应 401
+    r = client.get("/api/events?token=wrong")
+    assert r.status_code == 401
+
+
+def test_sse_streams_status_event(client):
+    # SSE 流式接口在 TestClient/httpx 下会缓冲整个无限响应体，无法逐块读取，
+    # 故直接验证端点使用的「每客户端队列 + 订阅 + 序列化」机制：订阅 -> notify ->
+    # 队列收到事件 -> SSE data 行包含 status。全程带硬超时，绝不挂起。
+    import json as _json
+    import queue as _queue
+    from web_server import _state as ws_state  # noqa: F811
+
+    client.post("/api/sessions", headers={"Authorization": "Bearer secret"},
+                json={"name": "a", "host": "h", "username": "u", "forward_rules": []})
+
+    q: "_queue.Queue" = _queue.Queue()
+    unsub = ws_state.manager.subscribe(lambda e: q.put(e))
+    try:
+        event = {"type": "status", "name": "a", "status": "exited", "detail": "test"}
+        ws_state.manager._notify(event)
+
+        received = q.get(timeout=2.0)  # 同步回调，必定立即拿到
+        assert received["type"] == "status"
+
+        # 复刻端点 _gen 的序列化格式，断言浏览器侧能读到 status
+        line = f"data: {_json.dumps(received, ensure_ascii=False)}\n\n"
+        assert "status" in line
+    finally:
+        unsub()

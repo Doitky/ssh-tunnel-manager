@@ -22,3 +22,6 @@ build/
 .ssh_tunnel_manager/
 
 AGENTS.md
+
+# Web dev
+.venv/

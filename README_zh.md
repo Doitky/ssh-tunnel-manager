@@ -79,6 +79,22 @@ sudo apt-get install sshpass
 sudo dnf install sshpass
 ```
 
+#### 通过浏览器管理（B/S 架构）
+
+无需图形界面，适合部署在服务器上通过浏览器管理端口转发。
+
+```shell
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements-web.txt
+.venv/bin/python web_server.py --token 你的口令
+# 浏览器访问 http://<服务器IP>:8741 ，输入口令登录
+```
+
+可选参数：`--host`（默认 `0.0.0.0`）、`--port`（默认 `8741`）、`--config`（指定 sessions.json 路径）。
+口令也可用环境变量 `SSH_TUNNEL_TOKEN` 传入。
+
+> GUI 与 Web 共享同一份 `~/.ssh_tunnel_manager/sessions.json`，不建议两者同时编辑会话配置。
+
 ### 使用方法
 
 1. 点击 **+ New Session** 创建新连接

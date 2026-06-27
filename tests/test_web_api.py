@@ -121,3 +121,24 @@ def test_sse_streams_status_event(client):
         assert "status" in line
     finally:
         unsub()
+
+
+def test_connect_port_conflict_409(client):
+    """本地端口被占用时，connect 应返回 409 而不启动会话。"""
+    import socket as _sock
+    holder = _sock.socket()
+    holder.bind(("127.0.0.1", 0))
+    held_port = holder.getsockname()[1]
+    holder.listen(1)
+    try:
+        client.post("/api/sessions", headers={"Authorization": "Bearer secret"},
+                    json={"name": "conflict", "host": "h", "username": "u",
+                          "auth_method": "password",
+                          "forward_rules": [{"direction": "local", "local_port": held_port,
+                                             "remote_host": "127.0.0.1", "remote_port": 80}]})
+        r = client.post("/api/sessions/conflict/connect",
+                        headers={"Authorization": "Bearer secret"})
+        assert r.status_code == 409
+        assert "已被占用" in r.json()["detail"]
+    finally:
+        holder.close()

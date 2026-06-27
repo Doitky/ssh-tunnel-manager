@@ -89,8 +89,15 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
 
     @app.post("/api/sessions/{name}/connect")
     def connect(name: str, _t: str = Depends(_require_token)):
-        if _state.config.get_session(name) is None:
+        session = _state.config.get_session(name)
+        if session is None:
             raise HTTPException(status_code=404, detail="not found")
+        busy = _state.manager.check_local_ports_in_use(session)
+        if busy:
+            raise HTTPException(
+                status_code=409,
+                detail=f"本地端口已被占用: {', '.join(str(p) for p in busy)}",
+            )
         _state.manager.start_session(name)
         return {"ok": True}
 
@@ -103,10 +110,16 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
 
     @app.post("/api/connect-all")
     def connect_all(_t: str = Depends(_require_token)):
+        skipped = []
         for s in _state.config.list_sessions():
-            if s.enabled:
-                _state.manager.start_session(s.name)
-        return {"ok": True}
+            if not s.enabled:
+                continue
+            busy = _state.manager.check_local_ports_in_use(s)
+            if busy:
+                skipped.append({"name": s.name, "ports": busy})
+                continue
+            _state.manager.start_session(s.name)
+        return {"ok": True, "skipped": skipped}
 
     @app.post("/api/disconnect-all")
     def disconnect_all(_t: str = Depends(_require_token)):
@@ -153,9 +166,17 @@ def create_app(token: str, config_path: Optional[str] = None) -> FastAPI:
 
     @app.get("/")
     def index():
-        return FileResponse(str(_web_dir / "index.html"))
+        return FileResponse(str(_web_dir / "index.html"),
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     app.mount("/web", StaticFiles(directory=str(_web_dir)), name="web")
+
+    @app.middleware("http")
+    async def _no_cache_static(request: Request, call_next):
+        resp = await call_next(request)
+        if request.url.path.startswith("/web/"):
+            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return resp
 
     return app
 

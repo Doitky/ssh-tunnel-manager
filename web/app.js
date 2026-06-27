@@ -15,7 +15,11 @@ async function api(method, path, body) {
   if (body !== undefined) opt.body = JSON.stringify(body);
   const r = await fetch(path, opt);
   if (r.status === 401) { logout(); throw new Error("unauthorized"); }
-  if (!r.ok) { const t = await r.text(); throw new Error(t); }
+  if (!r.ok) {
+    let msg = `${r.status} ${r.statusText}`;
+    try { const j = await r.json(); if (j && j.detail) msg = j.detail; } catch (_) {}
+    throw new Error(msg);
+  }
   return r.json();
 }
 
@@ -34,23 +38,59 @@ $("loginBtn").onclick = async () => {
 
 function enterApp() { hide($("login")); show($("app")); loadSessions(); openSSE(); }
 
+const singleBtns = ["connectBtn", "disconnectBtn", "editBtn", "deleteBtn"];
+function syncToolbar() {
+  const has = !!current;
+  singleBtns.forEach((id) => {
+    const b = $(id);
+    b.disabled = !has;
+    b.classList.toggle("dim", !has);
+  });
+}
+
+const esc = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function ruleField(session, field) {
+  const rules = session.forward_rules || [];
+  if (rules.length) {
+    const val = rules[0][field];
+    return val === "" || val == null ? "-" : val;
+  }
+  return "-";
+}
+
+function statusCell(s) {
+  if (!s.enabled) return `<span class="status disabled" title="已禁用">✕ 禁用</span>`;
+  if (s.status === "active") return `<span class="status active" title="运行中">● 运行</span>`;
+  return `<span class="status idle" title="就绪">○ 就绪</span>`;
+}
+
 async function loadSessions() {
   const list = await api("GET", "/api/sessions");
   const box = $("sessionList"); box.innerHTML = "";
   list.forEach((s) => {
-    const div = document.createElement("div");
-    div.className = "session-item" + (current === s.name ? " active" : "");
-    div.innerHTML = `<span>${s.name}</span><span class="dot ${s.status === "active" ? "active" : ""}" title="${s.status}"></span>`;
-    div.onclick = () => selectSession(s.name);
-    box.appendChild(div);
+    const tr = document.createElement("tr");
+    tr.className = "session-row" + (current === s.name ? " active" : "");
+    tr.innerHTML =
+      `<td class="col-name">${esc(s.name)}</td>` +
+      `<td>${esc(s.host)}</td>` +
+      `<td class="num">${esc(s.port)}</td>` +
+      `<td>${esc(s.username)}</td>` +
+      `<td>${statusCell(s)}</td>` +
+      `<td>${esc(ruleField(s, "direction"))}</td>` +
+      `<td class="num">${esc(ruleField(s, "local_port"))}</td>`;
+    tr.onclick = () => selectSession(s.name);
+    box.appendChild(tr);
   });
   if (current) { showView(); } else { hide($("view")); hide($("editor")); }
+  syncToolbar();
 }
 
 function selectSession(name) {
   current = name; loadSessions();
   show($("view"));
   loadLog();
+  syncToolbar();
 }
 
 async function loadLog() {
@@ -86,6 +126,8 @@ function showEditor(session) {
   $("f_keypath").value = session ? session.key_path : "";
   $("f_keepalive").value = session ? session.keepalive_interval : 30;
   $("f_keepalive_on").checked = session ? session.keepalive_enabled : true;
+  $("f_reconnect").value = session ? session.reconnect_interval : 10;
+  $("f_reconnect_on").checked = session ? session.auto_reconnect : false;
   toggleAuth();
   editingRules = session ? session.forward_rules.map((r) => ({ ...r })) : [];
   renderRules();
@@ -125,6 +167,8 @@ $("saveBtn").onclick = async () => {
     auth_method: $("f_auth").value, password: $("f_password").value,
     key_path: $("f_keypath").value, keepalive_enabled: $("f_keepalive_on").checked,
     keepalive_interval: parseInt($("f_keepalive").value) || 30,
+    auto_reconnect: $("f_reconnect_on").checked,
+    reconnect_interval: parseInt($("f_reconnect").value) || 10,
     forward_rules: editingRules, enabled: true,
   };
   try { await api("POST", "/api/sessions", body); current = body.name; hide($("editor")); show($("view")); loadSessions(); }
@@ -132,6 +176,7 @@ $("saveBtn").onclick = async () => {
 };
 $("cancelBtn").onclick = () => { hide($("editor")); if (current) show($("view")); };
 $("newBtn").onclick = () => { showEditor(null); };
+$("refreshBtn").onclick = () => { loadSessions(); if (current) loadLog(); };
 $("editBtn").onclick = async () => {
   const list = await api("GET", "/api/sessions");
   const s = list.find((x) => x.name === current);
@@ -141,9 +186,30 @@ $("deleteBtn").onclick = async () => {
   if (!current || !confirm(`删除会话 ${current}?`)) return;
   await api("DELETE", `/api/sessions/${current}`); current = null; hide($("view")); loadSessions();
 };
-$("connectBtn").onclick = async () => { if (current) { await api("POST", `/api/sessions/${current}/connect`); loadLog(); } };
-$("disconnectBtn").onclick = async () => { if (current) await api("POST", `/api/sessions/${current}/disconnect`); };
-$("connectAllBtn").onclick = async () => { await api("POST", "/api/connect-all"); };
-$("disconnectAllBtn").onclick = async () => { await api("POST", "/api/disconnect-all"); };
+$("connectBtn").onclick = async () => {
+  if (!current) return;
+  try {
+    await api("POST", `/api/sessions/${current}/connect`);
+    loadLog();
+  } catch (e) { alert("连接失败: " + e.message); }
+};
+$("disconnectBtn").onclick = async () => {
+  if (!current) return;
+  try { await api("POST", `/api/sessions/${current}/disconnect`); loadLog(); }
+  catch (e) { alert("断开失败: " + e.message); }
+};
+$("connectAllBtn").onclick = async () => {
+  try {
+    const r = await api("POST", "/api/connect-all");
+    if (r.skipped && r.skipped.length) {
+      const msg = r.skipped.map((x) => `${x.name}: 端口 ${x.ports.join(",")}`).join("\n");
+      alert("以下会话因端口冲突已跳过:\n" + msg);
+    }
+  } catch (e) { alert("连接失败: " + e.message); }
+};
+$("disconnectAllBtn").onclick = async () => {
+  try { await api("POST", "/api/disconnect-all"); }
+  catch (e) { alert("断开失败: " + e.message); }
+};
 
 if (TOKEN) enterApp();

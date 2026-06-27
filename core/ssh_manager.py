@@ -1,5 +1,6 @@
 import os
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -47,6 +48,28 @@ class SSHProcessManager:
         proc = info.get("proc")
         return proc is not None and proc.poll() is None
 
+    def check_local_ports_in_use(self, session: "SSHSession") -> list[int]:
+        """检测本会话需要在本地监听的端口是否已被占用。
+
+        仅检测 local / dynamic 方向（这两类由 SSH 在本地监听）。
+        remote 方向的端口在远程主机监听，本地不监听，故不检测。
+        返回被占用的端口列表（升序）。
+        """
+        ports: set[int] = set()
+        for rule in session.forward_rules:
+            if rule.direction in ("local", "dynamic") and rule.local_port > 0:
+                ports.add(rule.local_port)
+        in_use: list[int] = []
+        for port in sorted(ports):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                in_use.append(port)
+            finally:
+                sock.close()
+        return in_use
+
     def start_session(self, session_name: str, callback=None):
         session = self.config.get_session(session_name)
         if session is None:
@@ -68,6 +91,15 @@ class SSHProcessManager:
                 callback("Error: Could not build SSH command.")
             return
 
+        # 连接前检测本地监听端口是否被占用，避免端口冲突导致连接失败
+        busy_ports = self.check_local_ports_in_use(session)
+        if busy_ports:
+            msg = f"Error: 本地端口已被占用: {', '.join(str(p) for p in busy_ports)}"
+            if callback:
+                callback(msg)
+            self._notify({"type": "log", "name": session_name, "lines": msg})
+            return
+
         connect_event = threading.Event()
         self.active_processes[session_name] = {
             "proc": None,
@@ -75,11 +107,15 @@ class SSHProcessManager:
             "start_time": datetime.now(),
             "thread": threading.current_thread(),
             "_connect_event": connect_event,
+            "_stop_requested": False,
+            "_reconnect_attempts": 0,
         }
 
         def _run():
             log_lines = []
-            try:
+
+            def _launch_once():
+                """启动一次 SSH 进程并阻塞至其退出。返回退出码（None 表示异常）。"""
                 log_lines.append(f"[{datetime.now().strftime('%H:%M:%S')}] Starting session: {session_name}")
                 log_lines.append(f"Command: {' '.join(cmd)}")
                 env = os.environ.copy()
@@ -110,8 +146,39 @@ class SSHProcessManager:
                 reader_thread = threading.Thread(target=_reader, daemon=True)
                 reader_thread.start()
                 proc.wait()
-            except Exception as e:
-                log_lines.append(f"Error: {e}")
+                return proc.returncode
+
+            try:
+                while True:
+                    try:
+                        _launch_once()
+                    except Exception as e:
+                        log_lines.append(f"Error: {e}")
+                        self._stop_keepalive(session_name)
+
+                    info = self.active_processes.get(session_name)
+                    if info is None:
+                        break  # 已被外部清理
+                    # 用户主动断开 → 不重连
+                    if info.get("_stop_requested"):
+                        break
+                    # 未开启自动重连 → 退出
+                    if not session.auto_reconnect:
+                        break
+                    # 重新读取配置，间隔等待重连（期间可被 stop 取消）
+                    interval = session.reconnect_interval or 10
+                    info["_reconnect_attempts"] += 1
+                    n = info["_reconnect_attempts"]
+                    msg = f"[{datetime.now().strftime('%H:%M:%S')}] 连接断开，{interval}s 后自动重连（第 {n} 次）..."
+                    log_lines.append(msg)
+                    self._notify({"type": "log", "name": session_name, "lines": "\n".join(log_lines)})
+                    # 间隔等待，每秒检查是否被主动停止
+                    for _ in range(interval):
+                        if info.get("_stop_requested"):
+                            break
+                        time.sleep(1)
+                    if info.get("_stop_requested"):
+                        break
             finally:
                 self._stop_keepalive(session_name)
                 self.active_processes.pop(session_name, None)
@@ -126,6 +193,7 @@ class SSHProcessManager:
         info = self.active_processes.get(session_name)
         if info is None:
             return False
+        info["_stop_requested"] = True
         proc = info["proc"]
         self._stop_keepalive(session_name)
         try:

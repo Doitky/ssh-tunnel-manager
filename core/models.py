@@ -32,6 +32,8 @@ class SSHSession:
     remote_cmd: str = ""
     keepalive_enabled: bool = True
     keepalive_interval: int = 30   # seconds
+    auto_reconnect: bool = False
+    reconnect_interval: int = 10   # seconds
     forward_rules: list = field(default_factory=list)
     enabled: bool = True
     created_at: str = ""
